@@ -14,30 +14,27 @@ import pandas as pd
 
 # RAW DATA
 # flow
-flow_table_df = pd.read_csv('input/flows.csv')
+flow_table_df = pd.read_csv('input/flows.csv', index_col = "BASIN")
 # demand
 rip_demand_df = pd.read_csv('input/riparian_demand.csv')
 rip_users = numpy.array(rip_demand_df["USER"])
 app_demand_df = pd.read_csv('input/appropriative_demand.csv')
+
 # basically just user location
-
-
-# WHY?
-# riparian_basin_user_matrix = numpy.array(pd.read_csv("input/riparian_user_matrix.csv", index_col = 0))
 riparian_basin_user_matrix = numpy.array(pd.read_csv("input/riparian_user_matrix.csv", index_col="BASIN"))
 appropriative_basin_user_matrix = numpy.array(pd.read_csv("input/appropriative_user_matrix.csv", index_col="BASIN"))
-# appropriative_basin_user_matrix = numpy.array(pd.read_csv("input/appropriative_user_matrix.csv", index_col=0))
-
-
 
 # user connectivity
 riparian_user_connectivity_matrix = numpy.array(pd.read_csv('input/riparian_user_connectivity_matrix.csv', index_col="BASIN"))
 appropriative_user_connectivity_matrix = numpy.array(pd.read_csv('input/appropriative_user_connectivity_matrix.csv', index_col="BASIN"))
+
 # basin connectivity
-basins = flow_table_df["BASIN"].tolist()
-downstream_connectivity_matrix = numpy.array(pd.read_csv("input/basin_connectivity_matrix.csv", index_col="BASIN"))
+
 downstream_connectivity_df = pd.read_csv("input/basin_connectivity_matrix.csv", index_col="BASIN")
+downstream_connectivity_matrix = numpy.array(downstream_connectivity_df)
+basins = downstream_connectivity_df.columns.tolist()
 upstream_connectivity_matrix = numpy.transpose(downstream_connectivity_matrix)
+
 # date range for evalutaion
 day_range = pd.read_csv("input/day_range.csv")
 
