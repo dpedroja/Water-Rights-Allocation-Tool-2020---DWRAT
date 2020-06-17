@@ -1,2 +1,4 @@
 .spyproject
 GIT_commands.txt
+*.MPS
+*.SOL
