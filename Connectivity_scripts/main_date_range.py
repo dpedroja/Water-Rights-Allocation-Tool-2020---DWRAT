@@ -6,6 +6,7 @@ Created on Wed Apr 15 10:33:49 2020
 """
 import pandas as pd
 import numpy as np
+import os
 
 # define a function date_string and provide a start and end date in format ("mm/dd/yyy" , "mm/dd/yyy" )
 
@@ -33,11 +34,11 @@ output = date_string("4/01/1979", "4/01/1979")
 
 # output = date_string("10/02/1995", "10/02/1995")
 
-# output = date_string("10/02/1995", "10/12/1995")
+output = date_string("10/02/1995", "10/12/1995")
 
 # output.to_csv("input_MS_HW/day_range_MS_HW.csv")
 
-import os
+
 os.getcwd()
 os.chdir("C:\\Users\\dp\\WAT_2020_GIT")
 

@@ -4,13 +4,12 @@ Created on Tue Feb 11 12:29:08 2020
 
 @author: dpedroja
 """
-
 ################################# REQURIES NUMPY VERSION 18.1.1 #################################### 
-#numpy.version.version
 
 import pulp as pulp
 import numpy
 import pandas as pd
+numpy.__version__
 
 # RAW DATA
 # flow
@@ -29,7 +28,6 @@ riparian_user_connectivity_matrix = numpy.array(pd.read_csv('input/riparian_user
 appropriative_user_connectivity_matrix = numpy.array(pd.read_csv('input/appropriative_user_connectivity_matrix.csv', index_col="BASIN"))
 
 # basin connectivity
-
 downstream_connectivity_df = pd.read_csv("input/basin_connectivity_matrix.csv", index_col="BASIN")
 downstream_connectivity_matrix = numpy.array(downstream_connectivity_df)
 basins = downstream_connectivity_df.columns.tolist()
@@ -37,6 +35,22 @@ upstream_connectivity_matrix = numpy.transpose(downstream_connectivity_matrix)
 
 # date range for evalutaion
 day_range = pd.read_csv("input/day_range.csv")
+
+############################################################################################
+# Riparian output files
+output_cols = day_range["Dates"].tolist()
+
+rip_basin_proportions_output = pd.DataFrame(columns=[output_cols], index=[basins])
+rip_basin_proportions_output.index.name = "BASIN"
+
+# Appropriative output files
+app_users = numpy.array(app_demand_df["USER"])
+
+app_users_list = app_users.tolist()
+app_user_allocations_output = pd.DataFrame(columns=[output_cols], index=[app_users_list])
+app_user_allocations_output.index.name = "USER"
+
+############################################################################################
 
 for c, day in enumerate(day_range["Dates"]):
     riparian_demand_data = numpy.array(rip_demand_df[day])
@@ -91,7 +105,7 @@ for c, day in enumerate(day_range["Dates"]):
           #  	[0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0]		[ 9]			[ 9]
           #  	[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]		[ 9]			[77]
           #                    							[10]
-    # for ease, calculate the transpose
+    # for ease, calculate the transpose after multiplication above
     basin_rip_demand_data_T = numpy.matmul(riparian_user_connectivity_matrix, riparian_demand_data.reshape(numpy.size(rip_users),1)).reshape(numpy.size(basins),)
     
     # ALPHA
@@ -128,8 +142,7 @@ for c, day in enumerate(day_range["Dates"]):
     #      	[1, 0, 0, 0, 0, 0, 0, 0]			
     
     user_allocation_list = numpy.matmul(riparian_basin_user_matrix.transpose(), basin_proportions_list).reshape(numpy.size(rip_users),)* riparian_demand_data
-    
-    
+        
     # dictionary
     user_allocation = {rip_users[i] : user_allocation_list[i] for i, user in enumerate(rip_users)}
     
@@ -176,13 +189,17 @@ for c, day in enumerate(day_range["Dates"]):
     
     # basin demand dictionary
     basin_demand = {basins[k] : (numpy.matmul(riparian_basin_user_matrix, riparian_demand_data)[k]) for k,basin in enumerate(basins)}
+    
     # this loop is necessary to turn LP output into values
     basin_allocation = []
     for k, basin in enumerate(basins):
         basin_allocation.append(basin_proportions[basin].value() * basin_demand[basin])
-    print("Basin Total Allocations") 
-    print(basin_allocation)
-    
+         
+    print("Basin Total Allocations", basin_allocation)
+    # build output table        
+    for k in basins:
+        rip_basin_proportions_output.loc[k, [day]] = basin_proportions[k].varValue
+        
     #############################       APPROPRIATIVE_LP   #######################################################
        
     # UNALLOCATED AVAILABLE FLOW
@@ -206,15 +223,12 @@ for c, day in enumerate(day_range["Dates"]):
         print("Excess flow available for Appropriative allocation:" ,app_available_flow)
     else:
         app_available_flow = 0
-        print("No unallocated flow is available")
-        print(c/len(day_range), day)
+        print("No flow is available for appropriative allocations")
+        for i in app_users:
+            app_user_allocations_output.loc[i, [day]] = 0
+        print(c+1, "of", len(day)+1, "complete. Processing day:", day)
         continue
      
-    ##############################################################################################################################################################
-
-    # extract data here--not above-- to save time
-    app_users = numpy.array(app_demand_df["USER"])
-    
     for c, day in enumerate(day_range["Dates"]):
         appropriative_demand_data = numpy.array(app_demand_df[day])
         priority = numpy.array(app_demand_df["PRIORITY"])
@@ -276,10 +290,14 @@ for c, day in enumerate(day_range["Dates"]):
         user_allocations = []
         for i, user in enumerate(app_users):
             user_allocations.append(user_allocation[user].value())
-        
+
         app_basin_allocations = numpy.matmul(appropriative_basin_user_matrix, user_allocations)
         print("Basin Appropriative Allocations:") 
         print(app_basin_allocations)
-        print(c)
+        
+        # build output table1
+        for i in app_users:
+            app_user_allocations_output.loc[i, [day]] = user_allocation[i].varValue
+            print(c+1, "of", len(day)+1, "complete. Processing day:", day)
         continue
 print("Hi. I'm done")
