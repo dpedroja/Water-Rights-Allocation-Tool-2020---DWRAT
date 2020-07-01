@@ -30,11 +30,9 @@ def date_string(first, last):
 
 # assign the results of the function to a variable
     
-output = date_string("4/01/1979", "4/01/1979")
+# output = date_string("4/01/1979", "4/01/1979")
 
-# output = date_string("10/02/1995", "10/02/1995")
-
-output = date_string("10/02/1995", "10/12/1995")
+output = date_string("10/01/2015", "9/30/2016")
 
 # output.to_csv("input_MS_HW/day_range_MS_HW.csv")
 

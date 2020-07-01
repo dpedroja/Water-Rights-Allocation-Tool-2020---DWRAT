@@ -14,10 +14,13 @@ numpy.__version__
 # RAW DATA
 # flow
 flow_table_df = pd.read_csv('input/flows.csv', index_col = "BASIN")
+
 # demand
 rip_demand_df = pd.read_csv('input/riparian_demand.csv')
 rip_users = numpy.array(rip_demand_df["USER"])
 app_demand_df = pd.read_csv('input/appropriative_demand.csv')
+app_users = numpy.array(app_demand_df["USER"])
+app_users_list = app_users.tolist()
 
 # basically just user location
 riparian_basin_user_matrix = numpy.array(pd.read_csv("input/riparian_user_matrix.csv", index_col="BASIN"))
@@ -44,9 +47,7 @@ rip_basin_proportions_output = pd.DataFrame(columns=[output_cols], index=[basins
 rip_basin_proportions_output.index.name = "BASIN"
 
 # Appropriative output files
-app_users = numpy.array(app_demand_df["USER"])
 
-app_users_list = app_users.tolist()
 app_user_allocations_output = pd.DataFrame(columns=[output_cols], index=[app_users_list])
 app_user_allocations_output.index.name = "USER"
 
@@ -111,7 +112,12 @@ for c, day in enumerate(day_range["Dates"]):
     # ALPHA
     # minimum of the ratios of downstream penalties to basin demands
     # element by element division
-    alpha = min(downstream_penalty_list / basin_rip_demand_data_T)
+    # just a function to take care of any division by zero
+    def safe_min(x, y):
+        if y.any() <= 0:
+            return 1000000000000000
+        return min(x / y)
+    alpha = safe_min(downstream_penalty_list,basin_rip_demand_data_T)
     
     # DICTIONARIES FOR CONSTRAINTS
     available_flow = {basins[k] : available_flow_data[k] for k, basin in enumerate(basins)}
@@ -226,78 +232,80 @@ for c, day in enumerate(day_range["Dates"]):
         print("No flow is available for appropriative allocations")
         for i in app_users:
             app_user_allocations_output.loc[i, [day]] = 0
-        print(c+1, "of", len(day)+1, "complete. Processing day:", day)
+        print(c+1, "of", len(day_range["Dates"]), "complete. Processing day:", day)
         continue
-     
-    for c, day in enumerate(day_range["Dates"]):
-        appropriative_demand_data = numpy.array(app_demand_df[day])
-        priority = numpy.array(app_demand_df["PRIORITY"])
-        shortage_penalty_data = numpy.array([(numpy.size(app_users)-priority[i]) for i, user in enumerate(app_users)])    
-            
-        # DICTIONARIES
-        app_demand = {app_users[i] : appropriative_demand_data[i] for i, user in enumerate(app_users)}
-        shortage_penalty = {app_users[i] : shortage_penalty_data[i] for i, user in enumerate(app_users)}
-        app_available_flow = {basins[k] : available_flow_data[k] for k, basin in enumerate(basins)}
+    
+    appropriative_demand_data = numpy.array(app_demand_df[day])
+    priority = numpy.array(app_demand_df["PRIORITY"])
+    shortage_penalty_data = numpy.array([(numpy.size(app_users)-priority[i]) for i, user in enumerate(app_users)])    
         
-        # DEFINE PROBLEM
-        Appropriative_LP = pulp.LpProblem("AppropriativeProblem", pulp.LpMinimize)
-        
-        # DEFINE DECISION VARIABLES
-        user_allocation = pulp.LpVariable.dicts("UserAllocation", app_users, 0)
-        # convert to numpy array
-        user_allocation_list = numpy.array([ [user_allocation[user]] for user in app_users])
-        
-        # OBJECTIVE FUNCTION
-        Appropriative_LP += pulp.lpSum(  (shortage_penalty[user])*(app_demand[user]-user_allocation[user]) for user in app_users)
-        
-        # UPSTREAM APPROPRIATIVE BASIN ALLOCATION
-        # sum of appropriative allocations upstream of basin k
-        # Matrix/vector operations
-        # k by i upstream matrix ∙ i by 1 user_allocation for a k by 1 result constrained to available flow.
-        #                   							[UserAllocation_A1 ]		
-        #   	[0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1]		[UserAllocation_A2 ]		[UserAllocation_A11 + UserAllocation_A4]	     
-        #       [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0]		[UserAllocation_A3 ]		[UserAllocation_A3]
-        #       [0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1]		[UserAllocation_A4 ]		[UserAllocation_A11 + UserAllocation_A2 + UserAllocation_A3 + UserAllocation_A4]
-        #       [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0]	∙	[UserAllocation_A5 ]	=	[UserAllocation_A7]
-        #       [0, 1, 1, 1, 0, 1, 1, 1, 0, 0, 1]		[UserAllocation_A6 ]		[UserAllocation_A11 + UserAllocation_A2 + UserAllocation_A3 + UserAllocation_A4 + UserAllocation_A6 + UserAllocation_A7 + UserAllocation_A8]
-        #       [1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1]		[UserAllocation_A7 ]		[UserAllocation_A1 + UserAllocation_A10 + UserAllocation_A11 + UserAllocation_A2 + UserAllocation_A3 + UserAllocation_A4 + UserAllocation_A6 + UserAllocation_A7 + UserAllocation_A8]
-        #       [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0]		[UserAllocation_A8 ]		[UserAllocation_A9]
-        #       [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]		[UserAllocation_A9 ]		[UserAllocation_A1 + UserAllocation_A10 + UserAllocation_A11 + UserAllocation_A2 + UserAllocation_A3 + UserAllocation_A4 + UserAllocation_A5 + UserAllocation_A6 + UserAllocation_A7 + UserAllocation_A8 + UserAllocation_A9]
-        #                   							[UserAllocation_A10]
-        #                   							[UserAllocation_A11]
-        upstream_basin_allocation = numpy.matmul(appropriative_user_connectivity_matrix, user_allocation_list)
-        # dictionary
-        upstream_dict = {basins[k] : upstream_basin_allocation[k] for k, basin in enumerate(basins)}
-        
-        # CONSTRAINTS:
-        # 1.  allocation is <= available flow;
-        for basin in basins:
-            Appropriative_LP += pulp.lpSum(upstream_dict[basin]) <= available_flow[basin]
-        # 2.  allocation is <= to reported demand
-        for user in app_users:
-            Appropriative_LP += pulp.lpSum(user_allocation[user]) <= (app_demand[user])
-        # 3. ADDED: sum of user allocation <= total unallocated flow
-        Appropriative_LP += pulp.lpSum(user_allocation[i] for i in app_users) <= unallocated_flow
-        
-        # SOLVE USING PULP SOLVER
-        Appropriative_LP.solve()
-        print("status:", pulp.LpStatus[Appropriative_LP.status])
-        for v in Appropriative_LP.variables():
-            print(v.name, "=", v.varValue)
-        print("Objective = ", pulp.value(Appropriative_LP.objective))
-        
-        # this loop is necessary to turn LP output into values
-        user_allocations = []
-        for i, user in enumerate(app_users):
-            user_allocations.append(user_allocation[user].value())
+    # DICTIONARIES
+    app_demand = {app_users[i] : appropriative_demand_data[i] for i, user in enumerate(app_users)}
+    shortage_penalty = {app_users[i] : shortage_penalty_data[i] for i, user in enumerate(app_users)}
+    app_available_flow = {basins[k] : available_flow_data[k] for k, basin in enumerate(basins)}
+    
+    # DEFINE PROBLEM
+    Appropriative_LP = pulp.LpProblem("AppropriativeProblem", pulp.LpMinimize)
+    
+    # DEFINE DECISION VARIABLES
+    user_allocation = pulp.LpVariable.dicts("UserAllocation", app_users, 0)
+    # convert to numpy array
+    user_allocation_list = numpy.array([ [user_allocation[user]] for user in app_users])
+    
+    # OBJECTIVE FUNCTION
+    Appropriative_LP += pulp.lpSum(  (shortage_penalty[user])*(app_demand[user]-user_allocation[user]) for user in app_users)
+    
+    # UPSTREAM APPROPRIATIVE BASIN ALLOCATION
+    # sum of appropriative allocations upstream of basin k
+    # Matrix/vector operations
+    # k by i upstream matrix ∙ i by 1 user_allocation for a k by 1 result constrained to available flow.
+    #                   							[UserAllocation_A1 ]		
+    #   	[0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1]		[UserAllocation_A2 ]		[UserAllocation_A11 + UserAllocation_A4]	     
+    #       [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0]		[UserAllocation_A3 ]		[UserAllocation_A3]
+    #       [0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1]		[UserAllocation_A4 ]		[UserAllocation_A11 + UserAllocation_A2 + UserAllocation_A3 + UserAllocation_A4]
+    #       [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0]	∙	[UserAllocation_A5 ]	=	[UserAllocation_A7]
+    #       [0, 1, 1, 1, 0, 1, 1, 1, 0, 0, 1]		[UserAllocation_A6 ]		[UserAllocation_A11 + UserAllocation_A2 + UserAllocation_A3 + UserAllocation_A4 + UserAllocation_A6 + UserAllocation_A7 + UserAllocation_A8]
+    #       [1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1]		[UserAllocation_A7 ]		[UserAllocation_A1 + UserAllocation_A10 + UserAllocation_A11 + UserAllocation_A2 + UserAllocation_A3 + UserAllocation_A4 + UserAllocation_A6 + UserAllocation_A7 + UserAllocation_A8]
+    #       [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0]		[UserAllocation_A8 ]		[UserAllocation_A9]
+    #       [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]		[UserAllocation_A9 ]		[UserAllocation_A1 + UserAllocation_A10 + UserAllocation_A11 + UserAllocation_A2 + UserAllocation_A3 + UserAllocation_A4 + UserAllocation_A5 + UserAllocation_A6 + UserAllocation_A7 + UserAllocation_A8 + UserAllocation_A9]
+    #                   							[UserAllocation_A10]
+    #                   							[UserAllocation_A11]
+    upstream_basin_allocation = numpy.matmul(appropriative_user_connectivity_matrix, user_allocation_list)
+    # dictionary
+    upstream_dict = {basins[k] : upstream_basin_allocation[k] for k, basin in enumerate(basins)}
+    
+    # CONSTRAINTS:
+    # 1.  allocation is <= available flow;
+    for basin in basins:
+        Appropriative_LP += pulp.lpSum(upstream_dict[basin]) <= available_flow[basin]
+    # 2.  allocation is <= to reported demand
+    for user in app_users:
+        Appropriative_LP += pulp.lpSum(user_allocation[user]) <= (app_demand[user])
+    # 3. ADDED: sum of user allocation <= total unallocated flow
+    Appropriative_LP += pulp.lpSum(user_allocation[i] for i in app_users) <= unallocated_flow
+    
+    # SOLVE USING PULP SOLVER
+    Appropriative_LP.solve()
+    print("status:", pulp.LpStatus[Appropriative_LP.status])
+    for v in Appropriative_LP.variables():
+        print(v.name, "=", v.varValue)
+    print("Objective = ", pulp.value(Appropriative_LP.objective))
+    
+    # this loop is necessary to turn LP output into values
+    user_allocations = []
+    for i, user in enumerate(app_users):
+        user_allocations.append(user_allocation[user].value())
 
-        app_basin_allocations = numpy.matmul(appropriative_basin_user_matrix, user_allocations)
-        print("Basin Appropriative Allocations:") 
-        print(app_basin_allocations)
-        
-        # build output table1
-        for i in app_users:
-            app_user_allocations_output.loc[i, [day]] = user_allocation[i].varValue
-            print(c+1, "of", len(day)+1, "complete. Processing day:", day)
-        continue
+    app_basin_allocations = numpy.matmul(appropriative_basin_user_matrix, user_allocations)
+    print("Basin Appropriative Allocations:") 
+    print(app_basin_allocations)
+    
+    # build output table1
+    for i in app_users:
+        app_user_allocations_output.loc[i, [day]] = user_allocation[i].varValue
+    print(c+1, "of", len(day_range["Dates"]), "complete. Processing day:", day)
+    continue
 print("Hi. I'm done")
+
+# app_user_allocations_output.to_csv("C:/Users/dp/sample_app_output.csv")
+# rip_basin_proportions_output.to_csv("C:/Users/dp/sample_rip_output.csv")
