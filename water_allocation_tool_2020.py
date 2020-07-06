@@ -43,13 +43,12 @@ day_range = pd.read_csv("input/day_range.csv")
 # Riparian output files
 output_cols = day_range["Dates"].tolist()
 
-rip_basin_proportions_output = pd.DataFrame(columns=[output_cols], index=[basins])
-rip_basin_proportions_output.index.name = "BASIN"
+rip_basin_proportions_output = pd.DataFrame(columns=[output_cols], index=basins)
+# rip_basin_proportions_output.index.name = "BASIN"
 
 # Appropriative output files
-
-app_user_allocations_output = pd.DataFrame(columns=[output_cols], index=[app_users_list])
-app_user_allocations_output.index.name = "USER"
+app_user_allocations_output = pd.DataFrame(columns=[output_cols], index=app_users_list)
+# app_user_allocations_output.index.name = "USER"
 
 ############################################################################################
 
@@ -307,5 +306,5 @@ for c, day in enumerate(day_range["Dates"]):
     continue
 print("Hi. I'm done")
 
-# app_user_allocations_output.to_csv("C:/Users/dp/sample_app_output.csv")
-# rip_basin_proportions_output.to_csv("C:/Users/dp/sample_rip_output.csv")
+# app_user_allocations_output.to_csv("C:/Users/dp/sample_app_output.csv", index = True)
+# rip_basin_proportions_output.to_csv("C:/Users/dp/sample_rip_output.csv", index = True)
