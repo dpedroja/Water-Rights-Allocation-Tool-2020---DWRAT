@@ -9,37 +9,42 @@ Created on Tue Feb 11 12:29:08 2020
 import pulp as pulp
 import numpy as np
 import pandas as pd
+import datetime
+
 np.__version__
 
 # RAW DATA
 # flow
+start = datetime.datetime.now().time()
 flow_table_df = pd.read_csv('input/flows.csv', index_col = "BASIN")
 
 # demand
 rip_demand_df = pd.read_csv('input/riparian_demand.csv')
-rip_users = np.array(rip_demand_df["USER"])
+rip_users = rip_demand_df["USER"].to_numpy()
 app_demand_df = pd.read_csv('input/appropriative_demand.csv')
-app_users = np.array(app_demand_df["USER"])
+app_users = app_demand_df["USER"].to_numpy()
 app_users_list = app_users.tolist()
-
+app_users_count = np.size(app_users)
+    
 # basically just user location
 riparian_basin_user_matrix = np.array(pd.read_csv("input/riparian_user_matrix.csv", index_col="BASIN"))
 appropriative_basin_user_matrix = np.array(pd.read_csv("input/appropriative_user_matrix.csv", index_col="BASIN"))
 
 # user connectivity
 riparian_user_connectivity_matrix = np.array(pd.read_csv('input/riparian_user_connectivity_matrix.csv', index_col="BASIN"))
+riparian_user_connectivity_matrix_T = riparian_user_connectivity_matrix.T
 appropriative_user_connectivity_matrix = np.array(pd.read_csv('input/appropriative_user_connectivity_matrix.csv', index_col="BASIN"))
 
 # basin connectivity
 downstream_connectivity_df = pd.read_csv("input/basin_connectivity_matrix.csv", index_col="BASIN")
 downstream_connectivity_df.index.astype(str, copy = False)
-downstream_connectivity_matrix = np.array(downstream_connectivity_df)
-
-basins = downstream_connectivity_df.columns.tolist()
-upstream_connectivity_matrix = np.transpose(downstream_connectivity_matrix)
+downstream_connectivity_matrix = downstream_connectivity_df.to_numpy()
+upstream_connectivity_matrix = downstream_connectivity_matrix.T
+basins = list(downstream_connectivity_df.index)
 
 # date range for evalutaion
 day_range = pd.read_csv("input/day_range.csv")
+
 
 ############################################################################################
 # Riparian output files
@@ -55,8 +60,8 @@ app_user_allocations_output = pd.DataFrame(columns=[output_cols], index=app_user
 ############################################################################################
 
 for c, day in enumerate(day_range["Dates"]):
-    riparian_demand_data = np.array(rip_demand_df[day])
-    net_flow = np.array(flow_table_df[day])
+    riparian_demand_data = rip_demand_df[day].to_numpy()
+    net_flow = flow_table_df[day].to_numpy()
     
     # AVAILABLE FLOW: 
     # available flow: initialize and populate a 1 x k list for available basin flow
@@ -72,7 +77,7 @@ for c, day in enumerate(day_range["Dates"]):
          #   	[1, 1, 1, 1, 1, 1, 0, 0]		[5.6]			[33.6]
          #   	[0, 0, 0, 0, 0, 0, 1, 0]		[5.6]			[ 5.6]
          #   	[1, 1, 1, 1, 1, 1, 1, 1]		[5.6]			[44.8]
-    available_flow_data = np.matmul(upstream_connectivity_matrix, np.transpose(net_flow)) 
+    available_flow_data = np.matmul(upstream_connectivity_matrix, net_flow.T) 
     
     # DOWNSTREAM PENALTY
     # number of users upstream of i divided by total users
@@ -94,21 +99,11 @@ for c, day in enumerate(day_range["Dates"]):
     # basin-wide demand is the sum of user demand upstream of each basin
     # Matrix/vector operations:
     # 1 x i list of user demand ∙ i x k user connectivity matrix  = 1 x k basin demand matrix
-    basin_rip_demand_data_T = np.matmul(riparian_demand_data, np.transpose(riparian_user_connectivity_matrix))
+    basin_rip_demand_data_T = np.matmul(riparian_demand_data, riparian_user_connectivity_matrix_T)
    
     # ALPHA
     # minimum of the ratios of downstream penalties to basin demands, element by element division, division by zero should return 0
     alpha = min(np.divide(downstream_penalty_list, basin_rip_demand_data_T, out = np.full_like(downstream_penalty_list, 999999999), where=basin_rip_demand_data_T!=0))
-
-    # ALPHA
-    # minimum of the ratios of downstream penalties to basin demands
-    # element by element division
-    # just a function to take care of any division by zero
-    # def safe_min(x, y):
-    #     if y.any() <= 0:
-    #         return 1000000000000000
-    #     return min(x / y)
-    # alpha = safe_min(downstream_penalty_list,basin_rip_demand_data_T)
 
     # DICTIONARIES FOR CONSTRAINTS
     available_flow = {basins[k] : available_flow_data[k] for k, basin in enumerate(basins)}
@@ -120,13 +115,14 @@ for c, day in enumerate(day_range["Dates"]):
     # DEFINE DECISION VARIABLES
     basin_proportions = pulp.LpVariable.dicts("Proportions", basins, 0, 1, cat="Continuous")
     # convert dictionary of decision variables to an array
-    basin_proportions_list = pd.Series(basin_proportions).values
-   
+    basin_proportions_list = pd.Series(basin_proportions).to_numpy()
+    
     # USER ALLOCATION
     # user allocation i is their basin's allocation * user i's demand
     # need a 1 x k array of basin proportions ∙ k x i basin user matrix * demand (element-wise) 
     # Matrix/vector operations:
-    user_allocation_list = np.multiply((np.matmul(np.transpose(basin_proportions_list), riparian_basin_user_matrix)), riparian_demand_data)
+    user_allocation_list = np.multiply((np.matmul(basin_proportions_list.T, riparian_basin_user_matrix)), riparian_demand_data)
+    
     # dictionary
     user_allocation = {rip_users[i] : user_allocation_list[i] for i, user in enumerate(rip_users)}
     
@@ -160,15 +156,15 @@ for c, day in enumerate(day_range["Dates"]):
     # upstream cannot exceed downstream
     # need k by i downstream proportions matrix
     for k in basins:
-        downstream_basins = downstream_connectivity_df.index.astype(str, copy = False)[downstream_connectivity_df[k]==1].tolist()
+        downstream_basins = list(downstream_connectivity_df.index.astype(str, copy = False)[downstream_connectivity_df[k]==1])
         for j in downstream_basins:
             Riparian_LP += basin_proportions[j] <= basin_proportions[k]
         
     # SOLVE USING PULP SOLVER
     Riparian_LP.solve()
     print("Status: ", pulp.LpStatus[Riparian_LP.status])
-    for v in Riparian_LP.variables():
-          print(v.name, "=", v.varValue)
+    # for v in Riparian_LP.variables():
+    #       print(v.name, "=", v.varValue)
     print("Objective = ", pulp.value(Riparian_LP.objective))
     
     # basin demand dictionary
@@ -178,8 +174,7 @@ for c, day in enumerate(day_range["Dates"]):
     basin_allocation = []
     for k, basin in enumerate(basins):
         basin_allocation.append(basin_proportions[basin].value() * basin_demand[basin])
-     
-    print("Basin Total Allocations", basin_allocation)
+    # print("Basin Total Allocations", basin_allocation)
     # build output table        
     for k in basins:
         rip_basin_proportions_output.loc[k, [day]] = basin_proportions[k].varValue
@@ -202,9 +197,9 @@ for c, day in enumerate(day_range["Dates"]):
     
     unallocated_flow = np.array(net_flow - basin_allocation)
     
-    if np.sum(np.array(unallocated_flow)) > 0:
-        app_available_flow = np.matmul(upstream_connectivity_matrix,unallocated_flow)
-        print("Excess flow available for Appropriative allocation:" ,app_available_flow.round(3))
+    if np.sum(unallocated_flow) > 0:
+        app_available_flow = np.matmul(upstream_connectivity_matrix, unallocated_flow)
+        # print("Excess flow available for Appropriative allocation:" ,app_available_flow.round(3))
     else:
         app_available_flow = 0
         print("No flow is available for appropriative allocations")
@@ -213,9 +208,9 @@ for c, day in enumerate(day_range["Dates"]):
         print(c+1, "of", len(day_range["Dates"]), "complete. Processing day:", day)
         continue
     
-    appropriative_demand_data = np.array(app_demand_df[day])
-    priority = np.array(app_demand_df["PRIORITY"])
-    shortage_penalty_data = np.array([(np.size(app_users)-priority[i]) for i, user in enumerate(app_users)])    
+    appropriative_demand_data = app_demand_df[day].to_numpy()
+    priority = app_demand_df["PRIORITY"].to_numpy()
+    shortage_penalty_data = np.array([(app_users_count - priority[i]) for i, user in enumerate(app_users)])    
         
     # DICTIONARIES
     app_demand = {app_users[i] : appropriative_demand_data[i] for i, user in enumerate(app_users)}
@@ -228,7 +223,7 @@ for c, day in enumerate(day_range["Dates"]):
     # DEFINE DECISION VARIABLES
     user_allocation = pulp.LpVariable.dicts("UserAllocation", app_users, 0)
     # convert dictionary of decision variables to an array
-    user_allocation_list = pd.Series(user_allocation).values
+    user_allocation_list = pd.Series(user_allocation).to_numpy()
     
     # OBJECTIVE FUNCTION
     Appropriative_LP += pulp.lpSum(  (shortage_penalty[user])*(app_demand[user]-user_allocation[user]) for user in app_users)
@@ -265,8 +260,8 @@ for c, day in enumerate(day_range["Dates"]):
     # SOLVE USING PULP SOLVER
     Appropriative_LP.solve()
     print("status:", pulp.LpStatus[Appropriative_LP.status])
-    for v in Appropriative_LP.variables():
-        print(v.name, "=", v.varValue)
+    # for v in Appropriative_LP.variables():
+    #     print(v.name, "=", v.varValue)
     print("Objective = ", pulp.value(Appropriative_LP.objective))
     
     # this loop is necessary to turn LP output into values
@@ -274,16 +269,17 @@ for c, day in enumerate(day_range["Dates"]):
     for i, user in enumerate(app_users):
         user_allocations.append(user_allocation[user].value())
 
-    app_basin_allocations = np.matmul(appropriative_basin_user_matrix, user_allocations)
-    print("Basin Appropriative Allocations:") 
-    print(app_basin_allocations)
+    # app_basin_allocations = np.matmul(appropriative_basin_user_matrix, user_allocations)
+    # print("Basin Appropriative Allocations:") 
+    # print(app_basin_allocations)
     
     # build output table1
     for i in app_users:
         app_user_allocations_output.loc[i, [day]] = user_allocation[i].varValue
     print(c+1, "of", len(day_range["Dates"]), "complete. Processing day:", day)
     
-print("Hi. I'm done")
+finish = datetime.datetime.now().time()
+print("Hi. I'm done. Time at completion was:", finish, ". Starting time was:", start)
 
 # app_user_allocations_output.to_csv("C:/Users/dp/sample_app_output.csv", index = True)
 # rip_basin_proportions_output.to_csv("C:/Users/dp/sample_rip_output.csv", index = True)
