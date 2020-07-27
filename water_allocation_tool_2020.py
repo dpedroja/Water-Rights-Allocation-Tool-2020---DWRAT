@@ -8,43 +8,67 @@ Created on Tue Feb 11 12:29:08 2020
 
 import pulp as pulp
 import numpy as np
+np.__version__
 import pandas as pd
 import datetime
+from main_date_range import date_string
 
-np.__version__
+# if desired, select a date range:
+dates_to_run = date_string("10/01/1995", "10/05/1995")
+dates_to_run.to_csv("input/day_range.csv")
+
+# or just run existing file for evalutaion
+day_range = pd.read_csv("input/day_range.csv")
 
 # RAW DATA
 # flow
 start = datetime.datetime.now().time()
 flow_table_df = pd.read_csv('input/flows.csv', index_col = "BASIN")
+flow_table_df.sort_index(axis = "index")
 
 # demand
 rip_demand_df = pd.read_csv('input/riparian_demand.csv')
-rip_users = rip_demand_df["USER"].to_numpy()
+rip_demand_df.set_index("USER", inplace = True)
+rip_demand_df.sort_index(axis = "index", inplace = True)
+rip_users = rip_demand_df.index.values
+
 app_demand_df = pd.read_csv('input/appropriative_demand.csv')
-app_users = app_demand_df["USER"].to_numpy()
-app_users_list = app_users.tolist()
+app_demand_df.set_index("USER", inplace = True)
+app_demand_df.sort_index(axis = "index", inplace = True)
+app_users = app_demand_df.index.values
+
 app_users_count = np.size(app_users)
     
 # basically just user location
-riparian_basin_user_matrix = np.array(pd.read_csv("input/riparian_user_matrix.csv", index_col="BASIN"))
-appropriative_basin_user_matrix = np.array(pd.read_csv("input/appropriative_user_matrix.csv", index_col="BASIN"))
+riparian_basin_user_matrix_df = pd.read_csv("input/riparian_user_matrix.csv", index_col="BASIN")
+riparian_basin_user_matrix_df.sort_index(axis = "index", inplace = True)
+riparian_basin_user_matrix_df.sort_index(axis = "columns", inplace = True)
+riparian_basin_user_matrix = riparian_basin_user_matrix_df.to_numpy()
+
+appropriative_basin_user_matrix_df = pd.read_csv("input/appropriative_user_matrix.csv", index_col="BASIN")
+appropriative_basin_user_matrix_df.sort_index(axis = "index", inplace = True)
+appropriative_basin_user_matrix_df.sort_index(axis = "columns", inplace = True)
+appropriative_basin_user_matrix = appropriative_basin_user_matrix_df.to_numpy()
 
 # user connectivity
-riparian_user_connectivity_matrix = np.array(pd.read_csv('input/riparian_user_connectivity_matrix.csv', index_col="BASIN"))
+riparian_user_connectivity_matrix_df = pd.read_csv('input/riparian_user_connectivity_matrix.csv', index_col="BASIN")
+riparian_user_connectivity_matrix_df.sort_index(axis = "index", inplace = True)
+riparian_user_connectivity_matrix_df.sort_index(axis = "columns", inplace = True)
+riparian_user_connectivity_matrix = riparian_user_connectivity_matrix_df.to_numpy()
 riparian_user_connectivity_matrix_T = riparian_user_connectivity_matrix.T
-appropriative_user_connectivity_matrix = np.array(pd.read_csv('input/appropriative_user_connectivity_matrix.csv', index_col="BASIN"))
+
+appropriative_user_connectivity_matrix_df = pd.read_csv('input/appropriative_user_connectivity_matrix.csv', index_col="BASIN")
+appropriative_user_connectivity_matrix_df.sort_index(axis = "index", inplace = True)
+appropriative_user_connectivity_matrix_df.sort_index(axis = "columns", inplace = True)
+appropriative_user_connectivity_matrix = appropriative_user_connectivity_matrix_df.to_numpy()
 
 # basin connectivity
 downstream_connectivity_df = pd.read_csv("input/basin_connectivity_matrix.csv", index_col="BASIN")
-downstream_connectivity_df.index.astype(str, copy = False)
+downstream_connectivity_df.sort_index(axis = "index", inplace = True)
+downstream_connectivity_df.sort_index(axis = "columns", inplace = True)
 downstream_connectivity_matrix = downstream_connectivity_df.to_numpy()
 upstream_connectivity_matrix = downstream_connectivity_matrix.T
 basins = list(downstream_connectivity_df.index)
-
-# date range for evalutaion
-day_range = pd.read_csv("input/day_range.csv")
-
 
 ############################################################################################
 # Riparian output files
@@ -54,7 +78,7 @@ rip_basin_proportions_output = pd.DataFrame(columns=[output_cols], index=basins)
 # rip_basin_proportions_output.index.name = "BASIN"
 
 # Appropriative output files
-app_user_allocations_output = pd.DataFrame(columns=[output_cols], index=app_users_list)
+app_user_allocations_output = pd.DataFrame(columns=[output_cols], index= app_users)
 # app_user_allocations_output.index.name = "USER"
 
 ############################################################################################
@@ -156,7 +180,7 @@ for c, day in enumerate(day_range["Dates"]):
     # upstream cannot exceed downstream
     # need k by i downstream proportions matrix
     for k in basins:
-        downstream_basins = list(downstream_connectivity_df.index.astype(str, copy = False)[downstream_connectivity_df[k]==1])
+        downstream_basins = list(downstream_connectivity_df.index[downstream_connectivity_df.loc[k]==1])
         for j in downstream_basins:
             Riparian_LP += basin_proportions[j] <= basin_proportions[k]
         
@@ -269,7 +293,7 @@ for c, day in enumerate(day_range["Dates"]):
     for i, user in enumerate(app_users):
         user_allocations.append(user_allocation[user].value())
 
-    # app_basin_allocations = np.matmul(appropriative_basin_user_matrix, user_allocations)
+    app_basin_allocations = np.matmul(appropriative_basin_user_matrix, user_allocations)
     # print("Basin Appropriative Allocations:") 
     # print(app_basin_allocations)
     
