@@ -9,6 +9,7 @@ import pandas as pd
 import numpy
 import os
 os.getcwd()
+os.chdir("C:\\Users\\dpedroja\\WAT_2020_GIT")
 
 flow_table_df = pd.read_csv('input/flows.csv', index_col= "BASIN")
 flow_table_df.sort_index(axis = "index", inplace = True)
