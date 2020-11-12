@@ -180,10 +180,10 @@ for c, day in enumerate(day_range["Dates"]):
     # upstream cannot exceed downstream
     # need k by i downstream proportions matrix
     for k in basins:
-        downstream_basins = list(downstream_connectivity_df.index[downstream_connectivity_df.loc[k]==1])
+        downstream_basins = list(downstream_connectivity_df.index[downstream_connectivity_df[k]==1])
         for j in downstream_basins:
-            Riparian_LP += basin_proportions[j] <= basin_proportions[k]
-        
+            Riparian_LP += basin_proportions[j] <= basin_proportions[k]   
+    
     # SOLVE USING PULP SOLVER
     Riparian_LP.solve()
     print("Status: ", pulp.LpStatus[Riparian_LP.status])
