@@ -4,6 +4,6 @@ GIT_commands.txt
 *.SOL
 day_range.csv
 main_date_range.py
-PowerShell_1.txt
 input/day_range.csv
+output/*.csv
 JournalArticle_Theses

@@ -305,5 +305,5 @@ for c, day in enumerate(day_range["Dates"]):
 finish = datetime.datetime.now().time()
 print("Hi. I'm done. Time at completion was:", finish, ". Starting time was:", start)
 
-# app_user_allocations_output.to_csv("C:/Users/dp/sample_app_output.csv", index = True)
-# rip_basin_proportions_output.to_csv("C:/Users/dp/sample_rip_output.csv", index = True)
+app_user_allocations_output.to_csv("C:/Users/dpedroja/WAT_2020_GIT/output/sample_appropriative_output.csv", index = True)
+rip_basin_proportions_output.to_csv("C:/Users/dpedroja/WAT_2020_GIT/output/sample_riparian_output.csv", index = True)
